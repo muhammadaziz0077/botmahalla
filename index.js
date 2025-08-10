@@ -32,7 +32,7 @@ const groupSchema = new mongoose.Schema({
 });
 const Group = mongoose.model('Group', groupSchema);
 
-// --- Admin menyular ---
+// --- Menyular ---
 const userMenu = {
   reply_markup: {
     inline_keyboard: [
@@ -48,33 +48,38 @@ const adminMenu = {
     keyboard: [
       ["📋 Guruhlar ro‘yxati", "📢 Xabar yuborish"]
     ],
-    resize_keyboard: true,
-    one_time_keyboard: true
+    resize_keyboard: true
   }
 };
 
 const adminStates = {};
 
-// --- Guruhga bot qo‘shilganda avtomatik saqlash ---
+// --- Guruhni bazaga saqlash funksiyasi ---
+async function saveGroup(chatId, title) {
+  if (!chatId) return;
+  try {
+    await Group.findOneAndUpdate(
+      { chatId: chatId.toString() },
+      { title: title || "No title" },
+      { upsert: true, new: true }
+    );
+    console.log(`✅ Guruh saqlandi/yangilandi: ${title}`);
+  } catch (err) {
+    console.error("❌ Guruhni saqlashda xato:", err);
+  }
+}
+
+// --- Guruhga bot qo‘shilganda ---
 bot.on('my_chat_member', async (msg) => {
   const chat = msg.chat;
   const newStatus = msg.new_chat_member?.status;
 
-  if ((chat.type === 'group' || chat.type === 'supergroup') && newStatus === 'member') {
-    try {
-      await Group.findOneAndUpdate(
-        { chatId: chat.id.toString() },
-        { title: chat.title },
-        { upsert: true }
-      );
-      console.log(`✅ Guruh bazaga qo‘shildi: ${chat.title}`);
-    } catch (err) {
-      console.error("❌ Guruhni saqlashda xato:", err);
-    }
+  if ((chat.type === 'group' || chat.type === 'supergroup') && (newStatus === 'member' || newStatus === 'administrator')) {
+    await saveGroup(chat.id, chat.title);
   }
 });
 
-// --- Foydalanuvchi /start buyrug‘i ---
+// --- Foydalanuvchi /start buyrug‘i va xabarlar ---
 bot.on('message', async (msg) => {
   try {
     const chatId = msg.chat.id.toString();
@@ -82,16 +87,13 @@ bot.on('message', async (msg) => {
     const text = msg.text || "";
     const isAdmin = ADMIN_IDS.includes(fromId);
 
-    // Guruhdagi xabar orqali ham saqlash (agar botga allaqachon xabar yozilsa)
+    // Guruhdagi har qanday xabar orqali saqlash
     if (msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
-      await Group.findOneAndUpdate(
-        { chatId },
-        { title: msg.chat.title },
-        { upsert: true }
-      );
+      await saveGroup(chatId, msg.chat.title);
+      return; // Guruhda boshqa logika ishlamasin
     }
 
-    // /start komandasi
+    // Private chat
     if (msg.chat.type === 'private' && text === '/start') {
       if (isAdmin) {
         await bot.sendMessage(chatId, "👋 Salom Admin!", adminMenu);
@@ -105,7 +107,7 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    // Admin xabar yuborish
+    // Admin xabar yuborish rejimi
     if (isAdmin && adminStates[chatId] === 'awaiting_broadcast_text') {
       const broadcastText = text.trim();
       if (!broadcastText) {
@@ -125,7 +127,7 @@ bot.on('message', async (msg) => {
           successCount++;
         } catch {}
       }
-      await bot.sendMessage(chatId, `✅ Xabar barcha guruhlarga yuborildi.\n📤 Muvaffaqiyatli: ${successCount}/${groups.length}`);
+      await bot.sendMessage(chatId, `✅ Xabar yuborildi.\n📤 Muvaffaqiyatli: ${successCount}/${groups.length}`);
       adminStates[chatId] = null;
       return;
     }

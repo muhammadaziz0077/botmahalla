@@ -19,21 +19,28 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 bot.deleteWebHook().catch(() => {});
 
 // --- MongoDB ulanish ---
-mongoose.connect(MONGO_URL, {
-  // yangi versiyalarda useNewUrlParser, useUnifiedTopology default
-}).then(() => {
+mongoose.connect(MONGO_URL).then(() => {
   console.log("✅ MongoDB ga ulanish muvaffaqiyatli!");
 }).catch(err => {
   console.error("❌ MongoDB ulanish xatosi:", err);
   process.exit(1);
 });
 
-// --- Mongoose schema & model ---
+// --- Mongoose modellari ---
 const groupSchema = new mongoose.Schema({
   chatId: { type: String, unique: true, required: true },
   title: { type: String, required: true }
 });
 const Group = mongoose.model('Group', groupSchema);
+
+const userSchema = new mongoose.Schema({
+  userId: { type: String, unique: true, required: true },
+  firstName: { type: String },
+  lastName: { type: String },
+  username: { type: String },
+  joinedAt: { type: Date, default: Date.now }
+});
+const User = mongoose.model('User', userSchema);
 
 // --- Menyular ---
 const userMenu = {
@@ -73,6 +80,19 @@ bot.on('message', async (msg) => {
       await Group.findOneAndUpdate(
         { chatId },
         { title: msg.chat.title },
+        { upsert: true }
+      );
+    }
+
+    // --- Foydalanuvchini bazaga saqlash (private chat) ---
+    if (msg.chat.type === 'private') {
+      await User.findOneAndUpdate(
+        { userId: fromId },
+        {
+          firstName: msg.from.first_name,
+          lastName: msg.from.last_name || '',
+          username: msg.from.username || ''
+        },
         { upsert: true }
       );
     }
